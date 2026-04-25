@@ -135,8 +135,13 @@ class MacApp:
         self.current_status = payload
         self.provider_label.config(text=f"当前 provider: {payload['current_provider']}")
         self.model_label.config(text=f"当前模型: {payload.get('current_model') or '未读取到'}")
+        rollout_mismatches = int(payload.get("rollout_metadata_mismatches") or 0)
         self.summary_label.config(
-            text=f"线程总数: {payload['total_threads']}    可同步线程: {payload['movable_threads']}"
+            text=(
+                f"线程总数: {payload['total_threads']}    "
+                f"可同步线程: {payload['movable_threads']}    "
+                f"Rollout 元数据待同步: {rollout_mismatches}"
+            )
         )
         self.db_label.config(text=f"数据库: {payload['db_path']}")
 
@@ -154,25 +159,52 @@ class MacApp:
             self.backup_list.insert("end", label)
 
         self.append_log(
-            f"状态已刷新。当前 provider={payload['current_provider']}，可同步线程={payload['movable_threads']}。"
+            f"状态已刷新。当前 provider={payload['current_provider']}，"
+            f"可同步线程={payload['movable_threads']}，"
+            f"Rollout 元数据待同步={rollout_mismatches}。"
         )
 
     def sync_now(self) -> None:
         if not self.current_status:
             self.refresh_status()
-        if self.current_status and int(self.current_status["movable_threads"]) <= 0:
+        movable_threads = int((self.current_status or {}).get("movable_threads") or 0)
+        rollout_mismatches = int((self.current_status or {}).get("rollout_metadata_mismatches") or 0)
+        if self.current_status and movable_threads <= 0 and rollout_mismatches <= 0:
             messagebox.showinfo("无需同步", "当前已经没有需要迁移到当前 provider 的线程。")
             self.append_log("同步跳过：没有需要迁移的线程。")
             return
-        if not messagebox.askokcancel("确认同步", "将其他 provider 的线程统一归到当前 provider，且会先自动备份数据库。"):
+        if not messagebox.askokcancel(
+            "确认同步",
+            "将其他 provider 的线程和 rollout 元数据统一归到当前 provider，且会先自动备份。",
+        ):
             self.append_log("用户取消了同步。")
             return
         try:
             payload = run_backend("sync", codex_home=self.get_codex_home())
             self.append_log(f"同步完成。已移动 {payload['updated_rows']} 条线程。")
+            rollout_metadata = payload.get("rollout_metadata") or {}
+            if rollout_metadata:
+                self.append_log(
+                    f"Rollout 元数据已更新 {rollout_metadata.get('updated_files', 0)} 个文件。"
+                )
             self.append_log(f"备份文件: {payload['backup_path']}")
+            session_meta_backup = payload.get("session_meta_backup") or {}
+            if session_meta_backup.get("path"):
+                self.append_log(f"Rollout 元数据备份: {session_meta_backup['path']}")
             self.refresh_status()
-            messagebox.showinfo("同步完成", "同步完成。若历史列表没有立刻刷新，重开一次 Codex 即可。")
+            remaining_threads = int(payload.get("remaining_threads") or 0)
+            remaining_rollout_metadata = int(payload.get("remaining_rollout_metadata") or 0)
+            if payload.get("verified") and remaining_threads == 0 and remaining_rollout_metadata == 0:
+                messagebox.showinfo("同步完成", "同步完成。若历史列表没有立刻刷新，重开一次 Codex 即可。")
+            else:
+                messagebox.showwarning(
+                    "同步未完全完成",
+                    (
+                        f"同步后仍有 {remaining_threads} 条线程、"
+                        f"{remaining_rollout_metadata} 个 rollout 元数据不在当前 provider。"
+                        "建议关闭 Codex 后再同步一次。"
+                    ),
+                )
         except Exception as exc:
             messagebox.showerror("同步失败", str(exc))
             self.append_log(f"同步失败: {exc}")
@@ -181,6 +213,9 @@ class MacApp:
         try:
             payload = run_backend("backup", codex_home=self.get_codex_home())
             self.append_log(f"手动备份完成: {payload['backup_path']}")
+            session_meta_backup = payload.get("session_meta_backup") or {}
+            if session_meta_backup.get("path"):
+                self.append_log(f"Rollout 元数据备份: {session_meta_backup['path']}")
             self.refresh_status()
         except Exception as exc:
             messagebox.showerror("备份失败", str(exc))
@@ -194,6 +229,11 @@ class MacApp:
             payload = run_backend("restore", codex_home=self.get_codex_home())
             self.append_log(f"已恢复最新备份: {payload['restored_from']}")
             self.append_log(f"恢复前安全备份: {payload['safety_backup']}")
+            restored_session_meta = payload.get("restored_session_meta") or {}
+            if restored_session_meta.get("path"):
+                self.append_log(
+                    f"已恢复 Rollout 元数据 {restored_session_meta.get('restored_files', 0)} 个文件。"
+                )
             self.refresh_status()
             messagebox.showinfo("恢复完成", "恢复完成。建议重开一次 Codex 再看历史列表。")
         except Exception as exc:
@@ -217,6 +257,11 @@ class MacApp:
             payload = run_backend("restore", "--backup", backup_path, codex_home=self.get_codex_home())
             self.append_log(f"恢复完成。来源备份: {payload['restored_from']}")
             self.append_log(f"恢复前安全备份: {payload['safety_backup']}")
+            restored_session_meta = payload.get("restored_session_meta") or {}
+            if restored_session_meta.get("path"):
+                self.append_log(
+                    f"已恢复 Rollout 元数据 {restored_session_meta.get('restored_files', 0)} 个文件。"
+                )
             self.refresh_status()
             messagebox.showinfo("恢复完成", "恢复完成。建议重开一次 Codex 再看历史列表。")
         except Exception as exc:

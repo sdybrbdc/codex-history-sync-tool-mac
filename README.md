@@ -8,12 +8,15 @@
 
 当你切换 API、provider 或登录方式之后，Codex Desktop 有时会出现“本地历史明明还在，但侧边栏看不到”的情况。这个工具会检查本机的本地历史数据库，并把旧线程重新挂到当前正在使用的 `model_provider` 下面。
 
+macOS 版本还会同步每个 `rollout-*.jsonl` 第一行的 `session_meta.model_provider`。这是为了避免只改数据库后，Codex Desktop 刷新或重建索引时又从 JSONL 元数据把旧 provider 读回来。
+
 ## 这个工具能做什么
 
 - 查看当前本机 Codex 历史线程属于哪些 provider
 - 一键把旧 provider 下的线程同步到当前 provider
-- 在同步前自动备份数据库
-- 从备份恢复数据库
+- 同步 macOS 本地 rollout 元数据，避免刷新后回退到旧 provider
+- 在同步前自动备份数据库和 rollout 元数据
+- 从备份恢复数据库和 rollout 元数据
 - 提供一个可直接点击的 Windows 图形界面
 
 ## 适用场景
@@ -44,6 +47,7 @@
 - 已安装 Python 3，并可通过 `python3` 调用
 - 默认使用 `~/\.codex` 作为 Codex 本地数据目录
 - 内置 `tkinter` 可用时，可直接启动图形界面
+- 兼容新版 `config.toml` 缺少顶层 `model_provider` 的情况，会根据当前 model 的最近线程推断 provider
 
 ## 快速使用
 
@@ -127,7 +131,8 @@ python3 ./sync_backend.py --json restore
 
 ## 备份说明
 
-- 每次同步前都会自动创建一份备份
+- 每次同步前都会自动创建一份数据库备份
+- macOS 版本同步时还会创建一份 `session_meta.*.jsonl` 备份，用于恢复 rollout 第一行元数据
 - 每次恢复前也会先创建一份安全备份
 - 备份默认保存在 `%USERPROFILE%\\.codex\\history_sync_backups`
 
