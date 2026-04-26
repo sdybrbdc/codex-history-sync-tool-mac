@@ -8,11 +8,19 @@
 
 当你切换 API、provider 或登录方式之后，Codex Desktop 有时会出现“本地历史明明还在，但侧边栏看不到”的情况。这个工具会检查本机的本地历史数据库，并把旧线程重新挂到当前正在使用的 `model_provider` 下面。
 
+现在支持两种同步方式：
+
+- 全量同步：把所有旧 provider 下的线程统一归到当前 provider
+- 定向同步：先按项目分组，再只同步你选中的会话
+
 macOS 版本还会同步每个 `rollout-*.jsonl` 第一行的 `session_meta.model_provider`。这是为了避免只改数据库后，Codex Desktop 刷新或重建索引时又从 JSONL 元数据把旧 provider 读回来。
 
 ## 这个工具能做什么
 
 - 查看当前本机 Codex 历史线程属于哪些 provider
+- 按项目分组查看线程
+- 查看某个项目下的具体会话
+- 只把选中的会话同步到当前 provider
 - 一键把旧 provider 下的线程同步到当前 provider
 - 同步 macOS 本地 rollout 元数据，避免刷新后回退到旧 provider
 - 在同步前自动备份数据库和 rollout 元数据
@@ -93,6 +101,42 @@ macOS:
 python3 ./sync_backend.py --json status
 ```
 
+### 查看项目分组
+
+```powershell
+py -3 .\sync_backend.py --json projects
+```
+
+macOS:
+
+```bash
+python3 ./sync_backend.py --json projects
+```
+
+### 查看某个项目下的会话
+
+```powershell
+py -3 .\sync_backend.py --json threads --group-key repo:github.com/example/repo
+```
+
+macOS:
+
+```bash
+python3 ./sync_backend.py --json threads --group-key repo:github.com/example/repo
+```
+
+### 只同步选中的会话
+
+```powershell
+py -3 .\sync_backend.py --json sync-selected --thread-id <thread-id-1> --thread-id <thread-id-2>
+```
+
+macOS:
+
+```bash
+python3 ./sync_backend.py --json sync-selected --thread-id <thread-id-1> --thread-id <thread-id-2>
+```
+
 ### 执行同步
 
 ```powershell
@@ -140,6 +184,8 @@ python3 ./sync_backend.py --json restore
 
 - 最稳妥的做法是先关闭 Codex Desktop，再执行同步或恢复
 - 如果同步完成后历史列表没有立刻刷新，重开一次 Codex Desktop 即可
+- “按项目分组”默认优先按 git 仓库归并；识别不到仓库时才按 `cwd` 单独分组
+- 定向同步只会修改你选中的线程，不会改其他项目或其他会话
 
 ## 项目文件
 
